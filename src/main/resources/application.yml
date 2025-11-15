@@ -1,0 +1,32 @@
+server:
+  port: 8080
+spring:
+  application:
+    name: PlayHub
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3305/play_hub?useSSL=false&serverTimezone=UTC
+    username: root
+    password: 1234
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6378
+      database: 1
+
+mybatis:
+  # 配置 mapper.xml 映射文件路径（如果用 XML 方式写 SQL）
+  mapper-locations: classpath:mapper/*.xml  # 例如：src/main/resources/mapper/ 下的所有 .xml 文件
+  # 配置实体类包路径（可选，用于别名映射，简化 XML 中的类名）
+  type-aliases-package: com.luke.playhub.entity  # 实体类所在包
+  # 开启驼峰命名转换（例如：数据库字段 user_name → 实体类属性 userName）
+  configuration:
+    map-underscore-to-camel-case: true
+    # 打印 SQL 日志（开发环境可选，方便调试）
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+logging:
+  level:
+    cn.luke: debug
+  pattern:
+    dateformat: HH:mm:ss:SSS
