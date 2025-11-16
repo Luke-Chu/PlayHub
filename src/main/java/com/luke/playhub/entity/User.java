@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
  */
 @Data
 public class User {
-    private int id;
+    private long id;
     private String name;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;

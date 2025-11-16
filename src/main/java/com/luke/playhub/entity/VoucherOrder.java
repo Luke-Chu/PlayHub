@@ -12,8 +12,8 @@ import java.time.LocalDateTime;
 @Data
 public class VoucherOrder {
     private long id;
-    private int userId;
-    private int voucherId;
+    private long userId;
+    private long voucherId;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 }

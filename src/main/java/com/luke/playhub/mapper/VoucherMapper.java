@@ -11,8 +11,8 @@ import org.apache.ibatis.annotations.Update;
 
 @Mapper
 public interface VoucherMapper {
-    Voucher selectById(int voucherId);
+    Voucher selectById(long voucherId);
 
     @Update("update voucher set stock = stock - 1 where id = #{voucherId}")
-    int decreaseStock(int voucherId);
+    int decreaseStock(long voucherId);
 }

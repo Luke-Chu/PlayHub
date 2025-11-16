@@ -1,6 +1,7 @@
 package com.luke.playhub.service.impl;
 
 import cn.hutool.core.util.IdUtil;
+import com.luke.playhub.context.UserContext;
 import com.luke.playhub.dto.Result;
 import com.luke.playhub.entity.Voucher;
 import com.luke.playhub.entity.VoucherOrder;
@@ -47,7 +48,7 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
         VoucherOrder voucherOrder = new VoucherOrder();
         voucherOrder.setId(IdUtil.getSnowflakeNextId());
         voucherOrder.setVoucherId(voucherId);
-        voucherOrder.setUserId(1);
+        voucherOrder.setUserId(UserContext.getUserId());
         voucherOrderMapper.create(voucherOrder);
         return Result.success(voucherOrder.getId());
     }

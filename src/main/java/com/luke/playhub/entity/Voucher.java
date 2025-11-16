@@ -11,8 +11,8 @@ import java.time.LocalDateTime;
 
 @Data
 public class Voucher {
-    private int id;
-    private int shopId;
+    private long id;
+    private long shopId;
     private int stock;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
