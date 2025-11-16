@@ -1,5 +1,6 @@
 package com.luke.playhub.mapper;
 
+import com.luke.playhub.entity.VoucherOrder;
 import org.apache.ibatis.annotations.Mapper;
 
 /**
@@ -9,4 +10,5 @@ import org.apache.ibatis.annotations.Mapper;
 
 @Mapper
 public interface VoucherOrderMapper {
+    void create(VoucherOrder voucherOrder);
 }

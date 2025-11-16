@@ -1,6 +1,8 @@
 package com.luke.playhub.mapper;
 
+import com.luke.playhub.entity.Voucher;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Update;
 
 /**
  * @author Luke
@@ -9,4 +11,8 @@ import org.apache.ibatis.annotations.Mapper;
 
 @Mapper
 public interface VoucherMapper {
+    Voucher selectById(int voucherId);
+
+    @Update("update voucher set stock = stock - 1 where id = #{voucherId}")
+    int decreaseStock(int voucherId);
 }
