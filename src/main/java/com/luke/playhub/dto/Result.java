@@ -1,11 +1,15 @@
 package com.luke.playhub.dto;
 
+import lombok.Data;
+
 import java.io.Serializable;
 
 /**
  * @author Luke
  * @since 2025/11/16 15:21
  */
+
+@Data
 public class Result<T> implements Serializable {
     private boolean success;
     private String errorMsg;
