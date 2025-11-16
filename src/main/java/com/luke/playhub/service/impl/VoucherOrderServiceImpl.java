@@ -26,7 +26,7 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
 
     @Transactional
     @Override
-    public Result<Long> seckillVoucher(int voucherId) {
+    public Result<Long> decreaseStockWithOversold(long voucherId) {
         // 1. 查询优惠券信息
         Voucher voucher = voucherMapper.selectById(voucherId);
         if (voucher == null) {
@@ -39,7 +39,7 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
         }
 
         // 3. 扣减库存
-        int updateCount = voucherMapper.decreaseStock(voucherId);
+        int updateCount = voucherMapper.decreaseStockWithOversold(voucherId);
         if (updateCount <= 0) {
             return Result.error("库存不足");
         }

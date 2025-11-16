@@ -8,5 +8,5 @@ import com.luke.playhub.dto.Result;
  */
 
 public interface VoucherOrderService {
-    Result<Long> seckillVoucher(int voucherId);
+    Result<Long> decreaseStockWithOversold(long voucherId);
 }

@@ -23,10 +23,10 @@ mybatis:
   configuration:
     map-underscore-to-camel-case: true
     # 打印 SQL 日志（开发环境可选，方便调试）
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
 
 logging:
   level:
-    cn.luke: debug
+    cn.luke: warn
   pattern:
     dateformat: HH:mm:ss:SSS

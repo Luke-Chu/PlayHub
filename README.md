@@ -4,6 +4,24 @@
 
 
 
+## 不解决超卖问题
+
+Apifox自动化测试请求示例：
+
+```
+POST /voucher-order/seckill/withOversold/1?userId=2
+```
+
+测试条件：使用 200 个并发线程 对同一优惠券进行秒杀请求。
+
+问题现象：由于数据库字段 `stock` 为 `BIGINT UNSIGNED`，扣成负数时会触发异常。
+
+```
+Data truncation: BIGINT UNSIGNED value is out of range
+```
+
+如果字段 `stock` 不是 `UNSIGNED`，库存就会变为负数，多次测试200个线程会超卖9个。
+
 
 
 # 问题排查

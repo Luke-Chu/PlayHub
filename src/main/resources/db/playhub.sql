@@ -1,6 +1,6 @@
 create table shop
 (
-    id          int unsigned auto_increment comment '主键'
+    id          bigint unsigned auto_increment comment '主键'
         primary key,
     name        varchar(10)                         not null comment '商家名称',
     create_time timestamp default CURRENT_TIMESTAMP not null comment '创建时间',
@@ -10,7 +10,7 @@ create table shop
 
 create table user
 (
-    id          int unsigned auto_increment comment '主键'
+    id          bigint unsigned auto_increment comment '主键'
         primary key,
     name        varchar(10)                         not null comment '用户名',
     create_time timestamp default CURRENT_TIMESTAMP not null comment '创建时间',
@@ -20,7 +20,7 @@ create table user
 
 create table voucher
 (
-    id          int unsigned auto_increment comment '主键'
+    id          bigint unsigned auto_increment comment '主键'
         primary key,
     shop_id     int unsigned                        not null comment '商铺id',
     stock       int unsigned                        not null comment '库存',

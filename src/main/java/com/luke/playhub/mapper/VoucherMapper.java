@@ -14,5 +14,5 @@ public interface VoucherMapper {
     Voucher selectById(long voucherId);
 
     @Update("update voucher set stock = stock - 1 where id = #{voucherId}")
-    int decreaseStock(long voucherId);
+    int decreaseStockWithOversold(long voucherId);
 }

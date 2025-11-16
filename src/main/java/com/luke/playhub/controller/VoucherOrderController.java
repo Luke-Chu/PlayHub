@@ -19,8 +19,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class VoucherOrderController {
     private final VoucherOrderService voucherOrderService;
 
-    @PostMapping("/seckill/{voucherId}")
+    @PostMapping("/seckill/withOversold/{voucherId}")
     public Result<Long> seckillVoucher(@PathVariable int voucherId) {
-        return voucherOrderService.seckillVoucher(voucherId);
+        return voucherOrderService.decreaseStockWithOversold(voucherId);
     }
 }
