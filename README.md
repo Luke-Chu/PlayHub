@@ -84,6 +84,8 @@ VoucherOrder existingOrder = voucherOrderMapper.findByUserIdAndVoucherId(UserCon
 
 存在问题：现在的问题还是和之前一样，并发查询数据库，都不存在订单，然后都会去扣减库存。所以还是需要加锁，但是乐观锁比较适合更新数据，而现在是插入数据，需要使用悲观锁操作。
 
+> 问题：存在并发问题，不能实现一人一单。
+
 ## 一人一单 - synchronized
 
 加锁：查询加锁、插入加锁。
@@ -107,6 +109,8 @@ VoucherOrder existingOrder = voucherOrderMapper.findByUserIdAndVoucherId(UserCon
         return Result.success(createVoucherOrder(voucherId).getId());
     }
 ```
+
+> 问题：锁方法的锁粒度太大，导致所有请求串行。
 
 这样确实能实现一人一单，但`synchronized`锁粒度太大，会导致所有请求都串行。实际上只需要针对每个用户加锁即可，所以改成锁`userId`。
 
@@ -133,7 +137,11 @@ VoucherOrder existingOrder = voucherOrderMapper.findByUserIdAndVoucherId(UserCon
     }
 ```
 
-但这个代码还是存在问题，当前方法被spring的事务控制，如果在方法内部加锁，可能会导致当前方法事务还没有提交，但是锁已经释放，这也会导致问题，将当前方法整体包裹起来，确保事务不会出现问题。
+> 问题：锁释放了，但事务还没结束。
+
+## 一人一单 - 单体系统 FianlMethod
+
+上面这个代码还是存在问题，该方法被spring的事务控制，如果在方法内部加锁，可能会导致当前方法事务还没有提交，但是锁已经释放，这也会导致问题，将当前方法整体包裹起来，确保事务不会出现问题。
 
 ```java
 Long userId = UserContext.getUserId();
@@ -142,7 +150,9 @@ synchronized (userId.toString().intern()) {
 }
 ```
 
-但是以上做法依然有问题，因为调用的方法，其实是`this.`的方式调用的，事务想要生效，还得利用代理来生效，所以需要获得原始的事务对象， 来操作事务。
+> 问题：事务没生效。
+
+但以上做法依然有问题，因为`createVoucherOrderFinalMethod`方法的调用，其实是通过`this.`的方式调用的，事务想要生效，还得利用代理来生效，所以需要获得原始的事务对象， 来操作事务。
 
 ```java
 Long userId = UserContext.getUserId();
@@ -163,6 +173,8 @@ synchronized (userId.toString().intern()) {
 
 @EnableAspectJAutoProxy(exposeProxy = true) // 暴露代理对象
 ```
+
+> 问题：集群环境下 synchronized 锁失效。
 
 # 问题排查
 
