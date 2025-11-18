@@ -8,5 +8,7 @@ import com.luke.playhub.dto.Result;
  */
 
 public interface VoucherOrderService {
-    Result<Long> decreaseStockWithOversold(long voucherId);
+    Result<Long> createOrderWithOversold(long voucherId);
+
+    Result<Long> createOrderStockAsVersion(long voucherId);
 }

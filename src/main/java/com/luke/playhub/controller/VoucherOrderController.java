@@ -20,7 +20,12 @@ public class VoucherOrderController {
     private final VoucherOrderService voucherOrderService;
 
     @PostMapping("/seckill/withOversold/{voucherId}")
-    public Result<Long> seckillVoucher(@PathVariable int voucherId) {
-        return voucherOrderService.decreaseStockWithOversold(voucherId);
+    public Result<Long> seckillWithOversold(@PathVariable long voucherId) {
+        return voucherOrderService.createOrderWithOversold(voucherId);
+    }
+
+    @PostMapping("/seckill/stockAsVersion/{voucherId}")
+    public Result<Long> seckillStockAsVersion(@PathVariable long voucherId) {
+        return voucherOrderService.createOrderStockAsVersion(voucherId);
     }
 }
