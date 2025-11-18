@@ -25,6 +25,9 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
     private final VoucherMapper voucherMapper;
     private final VoucherOrderMapper voucherOrderMapper;
 
+    /**
+     * 创建订单，不解决超卖问题
+     */
     @Transactional
     @Override
     public Result<Long> createOrderWithOversold(long voucherId) {
@@ -54,6 +57,9 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
         return Result.success(voucherOrder.getId());
     }
 
+    /**
+     * 版本号解决超卖问题，存在成功率太低问题
+     */
     @Transactional
     @Override
     public Result<Long> createOrderStockAsVersion(long voucherId) {
@@ -78,6 +84,9 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
         return Result.success(createVoucherOrder(voucherId).getId());
     }
 
+    /**
+     * 超卖问题最终解决方案：乐观锁 --> where 条件后带 stock > 0
+     */
     @Override
     public Result<Long> createOrderStockGreaterZero(long voucherId) {
         // 1. 查询优惠券信息
@@ -101,6 +110,9 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
         return Result.success(createVoucherOrder(voucherId).getId());
     }
 
+    /**
+     * 初始一人一单解决方案，存在并发问题
+     */
     @Override
     public Result<Long> createOrderOnePersonOneOrder(long voucherId) {
         // 1. 查询优惠券信息
@@ -130,6 +142,9 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
         return Result.success(createVoucherOrder(voucherId).getId());
     }
 
+    /**
+     * synchronized 加锁解决一人一单，存在事务问题
+     */
     @Override
     public Result<Long> createOrderOnePersonOneOrderWithSynchronized(long voucherId) {
         // 1. 查询优惠券信息
