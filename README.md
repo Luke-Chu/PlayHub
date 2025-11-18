@@ -133,7 +133,36 @@ VoucherOrder existingOrder = voucherOrderMapper.findByUserIdAndVoucherId(UserCon
     }
 ```
 
+但这个代码还是存在问题，当前方法被spring的事务控制，如果在方法内部加锁，可能会导致当前方法事务还没有提交，但是锁已经释放，这也会导致问题，将当前方法整体包裹起来，确保事务不会出现问题。
 
+```java
+Long userId = UserContext.getUserId();
+synchronized (userId.toString().intern()) {
+    return createVoucherOrderFinalMethod(voucherId);
+}
+```
+
+但是以上做法依然有问题，因为调用的方法，其实是`this.`的方式调用的，事务想要生效，还得利用代理来生效，所以需要获得原始的事务对象， 来操作事务。
+
+```java
+Long userId = UserContext.getUserId();
+synchronized (userId.toString().intern()) {
+    VoucherOrderService proxy = (VoucherOrderService) AopContext.currentProxy();
+    return proxy.createVoucherOrderFinalMethod(voucherId);
+}
+```
+
+需要在启动类上添加对应注解，并在pom文件中引入对应依赖：
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-aop</artifactId>
+    <!-- 无需指定版本，Spring Boot 父工程已统一管理 -->
+</dependency>
+
+@EnableAspectJAutoProxy(exposeProxy = true) // 暴露代理对象
+```
 
 # 问题排查
 

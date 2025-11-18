@@ -9,6 +9,7 @@ import com.luke.playhub.mapper.VoucherMapper;
 import com.luke.playhub.mapper.VoucherOrderMapper;
 import com.luke.playhub.service.VoucherOrderService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.aop.framework.AopContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -145,13 +146,45 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
         return createVoucherOrderSynchronized(voucherId);
     }
 
-    private VoucherOrder createVoucherOrder(long voucherId) {
-        VoucherOrder voucherOrder = new VoucherOrder();
-        voucherOrder.setId(IdUtil.getSnowflakeNextId());
-        voucherOrder.setVoucherId(voucherId);
-        voucherOrder.setUserId(UserContext.getUserId());
-        voucherOrderMapper.create(voucherOrder);
-        return voucherOrder;
+    /**
+     * synchronized 加锁解决一人一单，并解决事务问题。
+     */
+    @Override
+    public Result<Long> createOrderOnePersonOneOrderWithFinalMethod(long voucherId) {
+        // 1. 查询优惠券信息
+        Voucher voucher = voucherMapper.selectById(voucherId);
+        if (voucher == null) {
+            return Result.error("优惠券不存在");
+        }
+
+        // 2. 判断库存是否充足
+        if (voucher.getStock() < 1) {
+            return Result.error("库存不足");
+        }
+
+        Long userId = UserContext.getUserId();
+        synchronized (userId.toString().intern()) {
+            VoucherOrderService proxy = (VoucherOrderService) AopContext.currentProxy();
+            return proxy.createVoucherOrderFinalMethod(voucherId);
+        }
+    }
+
+    @Transactional
+    public Result<Long> createVoucherOrderFinalMethod(long voucherId) {
+        // 3. 查询订单表，看看有没有数据
+        VoucherOrder existingOrder = voucherOrderMapper.findByUserIdAndVoucherId(UserContext.getUserId(), voucherId);
+        if (existingOrder != null) {
+            return Result.error("每人限领一张");
+        }
+
+        // 4. 扣减库存
+        int updateCount = voucherMapper.decreaseStockGreaterZero(voucherId);
+        if (updateCount <= 0) {
+            return Result.error("库存不足");
+        }
+
+        // 5. 创建订单
+        return Result.success(createVoucherOrder(voucherId).getId());
     }
 
     @Transactional
@@ -159,7 +192,7 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
         Long userId = UserContext.getUserId();
         synchronized (userId.toString().intern()) {
             // 3. 查询订单表，看看有没有数据
-            VoucherOrder existingOrder = voucherOrderMapper.findByUserIdAndVoucherId(userId, voucherId);
+            VoucherOrder existingOrder = voucherOrderMapper.findByUserIdAndVoucherId(UserContext.getUserId(), voucherId);
             if (existingOrder != null) {
                 return Result.error("每人限领一张");
             }
@@ -173,5 +206,14 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
             // 5. 创建订单
             return Result.success(createVoucherOrder(voucherId).getId());
         }
+    }
+
+    private VoucherOrder createVoucherOrder(long voucherId) {
+        VoucherOrder voucherOrder = new VoucherOrder();
+        voucherOrder.setId(IdUtil.getSnowflakeNextId());
+        voucherOrder.setVoucherId(voucherId);
+        voucherOrder.setUserId(UserContext.getUserId());
+        voucherOrderMapper.create(voucherOrder);
+        return voucherOrder;
     }
 }

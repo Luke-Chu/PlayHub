@@ -43,4 +43,9 @@ public class VoucherOrderController {
     public Result<Long> seckillOnePersonOneOrderWithSynchronized(@PathVariable long voucherId) {
         return voucherOrderService.createOrderOnePersonOneOrderWithSynchronized(voucherId);
     }
+
+    @PostMapping("/seckill/onePersonOneOrderFinalMethod/{voucherId}")
+    public Result<Long> seckillOnePersonOneOrderFinalMethod(@PathVariable long voucherId) {
+        return voucherOrderService.createOrderOnePersonOneOrderWithFinalMethod(voucherId);
+    }
 }

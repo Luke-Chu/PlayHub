@@ -67,6 +67,11 @@
             <artifactId>hutool-all</artifactId>
             <version>5.8.41</version>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+            <!-- 无需指定版本，Spring Boot 父工程已统一管理 -->
+        </dependency>
     </dependencies>
 
     <build>
