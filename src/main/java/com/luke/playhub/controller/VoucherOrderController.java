@@ -38,4 +38,9 @@ public class VoucherOrderController {
     public Result<Long> seckillOnePersonOneOrder(@PathVariable long voucherId) {
         return voucherOrderService.createOrderOnePersonOneOrder(voucherId);
     }
+
+    @PostMapping("/seckill/onePersonOneOrderWithSynchronized/{voucherId}")
+    public Result<Long> seckillOnePersonOneOrderWithSynchronized(@PathVariable long voucherId) {
+        return voucherOrderService.createOrderOnePersonOneOrderWithSynchronized(voucherId);
+    }
 }

@@ -15,4 +15,6 @@ public interface VoucherOrderService {
     Result<Long> createOrderStockGreaterZero(long voucherId);
 
     Result<Long> createOrderOnePersonOneOrder(long voucherId);
+
+    Result<Long> createOrderOnePersonOneOrderWithSynchronized(long voucherId);
 }

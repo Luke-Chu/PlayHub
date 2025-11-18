@@ -129,6 +129,22 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
         return Result.success(createVoucherOrder(voucherId).getId());
     }
 
+    @Override
+    public Result<Long> createOrderOnePersonOneOrderWithSynchronized(long voucherId) {
+        // 1. 查询优惠券信息
+        Voucher voucher = voucherMapper.selectById(voucherId);
+        if (voucher == null) {
+            return Result.error("优惠券不存在");
+        }
+
+        // 2. 判断库存是否充足
+        if (voucher.getStock() < 1) {
+            return Result.error("库存不足");
+        }
+
+        return createVoucherOrderSynchronized(voucherId);
+    }
+
     private VoucherOrder createVoucherOrder(long voucherId) {
         VoucherOrder voucherOrder = new VoucherOrder();
         voucherOrder.setId(IdUtil.getSnowflakeNextId());
@@ -136,5 +152,23 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
         voucherOrder.setUserId(UserContext.getUserId());
         voucherOrderMapper.create(voucherOrder);
         return voucherOrder;
+    }
+
+    @Transactional
+    public synchronized Result<Long> createVoucherOrderSynchronized(long voucherId) {
+        // 3. 查询订单表，看看有没有数据
+        VoucherOrder existingOrder = voucherOrderMapper.findByUserIdAndVoucherId(UserContext.getUserId(), voucherId);
+        if (existingOrder != null) {
+            return Result.error("每人限领一张");
+        }
+
+        // 4. 扣减库存
+        int updateCount = voucherMapper.decreaseStockGreaterZero(voucherId);
+        if (updateCount <= 0) {
+            return Result.error("库存不足");
+        }
+
+        // 5. 创建订单
+        return Result.success(createVoucherOrder(voucherId).getId());
     }
 }

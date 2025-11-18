@@ -84,6 +84,36 @@ VoucherOrder existingOrder = voucherOrderMapper.findByUserIdAndVoucherId(UserCon
 
 存在问题：现在的问题还是和之前一样，并发查询数据库，都不存在订单，然后都会去扣减库存。所以还是需要加锁，但是乐观锁比较适合更新数据，而现在是插入数据，需要使用悲观锁操作。
 
+## 一人一单 - synchronized
+
+加锁：查询加锁、插入加锁。
+
+```java
+    @Transactional
+    public synchronized Result<Long> createVoucherOrderSynchronized(long voucherId) {
+        // 3. 查询订单表，看看有没有数据
+        VoucherOrder existingOrder = voucherOrderMapper.findByUserIdAndVoucherId(UserContext.getUserId(), voucherId);
+        if (existingOrder != null) {
+            return Result.error("每人限领一张");
+        }
+
+        // 4. 扣减库存
+        int updateCount = voucherMapper.decreaseStockGreaterZero(voucherId);
+        if (updateCount <= 0) {
+            return Result.error("库存不足");
+        }
+
+        // 5. 创建订单
+        return Result.success(createVoucherOrder(voucherId).getId());
+    }
+```
+
+这样确实能实现一人一单，但`synchronized`锁粒度太大，会导致所有请求都串行。实际上只需要针对每个用户加锁即可，所以改成锁`userId`。
+
+
+
+
+
 # 问题排查
 
 ## 🚨 Spring Boot 返回 406
