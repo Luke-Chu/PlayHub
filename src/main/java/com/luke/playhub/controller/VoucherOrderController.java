@@ -33,4 +33,9 @@ public class VoucherOrderController {
     public Result<Long> seckillStockGreaterZero(@PathVariable long voucherId) {
         return voucherOrderService.createOrderStockGreaterZero(voucherId);
     }
+
+    @PostMapping("/seckill/onePersonOneOrder/{voucherId}")
+    public Result<Long> seckillOnePersonOneOrder(@PathVariable long voucherId) {
+        return voucherOrderService.createOrderOnePersonOneOrder(voucherId);
+    }
 }

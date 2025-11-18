@@ -13,4 +13,6 @@ public interface VoucherOrderService {
     Result<Long> createOrderStockAsVersion(long voucherId);
 
     Result<Long> createOrderStockGreaterZero(long voucherId);
+
+    Result<Long> createOrderOnePersonOneOrder(long voucherId);
 }

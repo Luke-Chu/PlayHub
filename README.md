@@ -60,6 +60,30 @@ update voucher set stock = stock - 1 where id = ? and stock > 0;
 
 预期结果：不超卖，也不少卖。
 
+## 一人一单初版
+
+Apifox自动化测试请求示例：
+
+```
+POST /voucher-order/seckill/onePersonOneOrder/{voucherId}
+```
+
+在扣减库存前新增一个逻辑用来判断是不是有了订单：
+
+```java
+// 3. 查询订单表，看看有没有数据
+VoucherOrder existingOrder = voucherOrderMapper.findByUserIdAndVoucherId(UserContext.getUserId(), voucherId);
+	if (existingOrder != null) {
+	return Result.error("每人限领一张");
+}
+
+// 4. 扣减库存
+```
+
+测试结果：100个请求（同一个用户id），写入了3条订单数据，说明还没完全做到一人一单。
+
+存在问题：现在的问题还是和之前一样，并发查询数据库，都不存在订单，然后都会去扣减库存。所以还是需要加锁，但是乐观锁比较适合更新数据，而现在是插入数据，需要使用悲观锁操作。
+
 # 问题排查
 
 ## 🚨 Spring Boot 返回 406
