@@ -155,20 +155,23 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
     }
 
     @Transactional
-    public synchronized Result<Long> createVoucherOrderSynchronized(long voucherId) {
-        // 3. 查询订单表，看看有没有数据
-        VoucherOrder existingOrder = voucherOrderMapper.findByUserIdAndVoucherId(UserContext.getUserId(), voucherId);
-        if (existingOrder != null) {
-            return Result.error("每人限领一张");
-        }
+    public Result<Long> createVoucherOrderSynchronized(long voucherId) {
+        Long userId = UserContext.getUserId();
+        synchronized (userId.toString().intern()) {
+            // 3. 查询订单表，看看有没有数据
+            VoucherOrder existingOrder = voucherOrderMapper.findByUserIdAndVoucherId(userId, voucherId);
+            if (existingOrder != null) {
+                return Result.error("每人限领一张");
+            }
 
-        // 4. 扣减库存
-        int updateCount = voucherMapper.decreaseStockGreaterZero(voucherId);
-        if (updateCount <= 0) {
-            return Result.error("库存不足");
-        }
+            // 4. 扣减库存
+            int updateCount = voucherMapper.decreaseStockGreaterZero(voucherId);
+            if (updateCount <= 0) {
+                return Result.error("库存不足");
+            }
 
-        // 5. 创建订单
-        return Result.success(createVoucherOrder(voucherId).getId());
+            // 5. 创建订单
+            return Result.success(createVoucherOrder(voucherId).getId());
+        }
     }
 }
