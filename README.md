@@ -33,12 +33,32 @@ POST /voucher-order/seckill/stockAsVersion/{voucherId}
 解决超卖方案：乐观锁（查不加锁，修改判断数据是否正确）
 
 ```sql
-update voucher set stock = stock - 1 where voucher_id = ? and stock == ?;
+update voucher set stock = stock - 1 where id = ? and stock == ?;
 ```
 
 测试条件：使用 100 个并发线程对同一优惠券进行秒杀请求。预期效果：扣减100库存。
 
 问题现象：100的库存，只扣减了13个，所以87个用户扣减失败。
+
+## 库存大于零解决超卖
+
+Apifox自动化测试请求示例：
+
+```
+POST /voucher-order/seckill/stockGreaterZero/{voucherId}
+```
+
+解决方案：乐观锁
+
+```sql
+update voucher set stock = stock - 1 where id = ? and stock > 0;
+```
+
+因为`id`是索引字段，所以`InnoDB`会定位到对应的行，然后会对该行加上行级排他锁（`X`锁）。加锁后，会检查`stock > 0`这个条件是否满足。满足，则扣减库存并更新到数据库；否则，不进行更新操作。这便解决了库存超卖问题。
+
+> 排他锁的作用是阻止其他事务对该行进行读（除非是一致性非锁定读）和写操作，直到当前事务提交或回滚。
+
+预期结果：不超卖，也不少卖。
 
 # 问题排查
 

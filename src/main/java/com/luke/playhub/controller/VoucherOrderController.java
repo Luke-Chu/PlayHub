@@ -28,4 +28,9 @@ public class VoucherOrderController {
     public Result<Long> seckillStockAsVersion(@PathVariable long voucherId) {
         return voucherOrderService.createOrderStockAsVersion(voucherId);
     }
+
+    @PostMapping("/seckill/stockGreaterZero/{voucherId}")
+    public Result<Long> seckillStockGreaterZero(@PathVariable long voucherId) {
+        return voucherOrderService.createOrderStockGreaterZero(voucherId);
+    }
 }

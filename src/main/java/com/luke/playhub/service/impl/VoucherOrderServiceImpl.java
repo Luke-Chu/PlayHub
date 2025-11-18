@@ -77,6 +77,29 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
         return Result.success(createVoucherOrder(voucherId).getId());
     }
 
+    @Override
+    public Result<Long> createOrderStockGreaterZero(long voucherId) {
+        // 1. 查询优惠券信息
+        Voucher voucher = voucherMapper.selectById(voucherId);
+        if (voucher == null) {
+            return Result.error("优惠券不存在");
+        }
+
+        // 2. 判断库存是否充足
+        if (voucher.getStock() < 1) {
+            return Result.error("库存不足");
+        }
+
+        // 3. 扣减库存
+        int updateCount = voucherMapper.decreaseStockGreaterZero(voucherId);
+        if (updateCount <= 0) {
+            return Result.error("库存不足");
+        }
+
+        // 4. 创建订单
+        return Result.success(createVoucherOrder(voucherId).getId());
+    }
+
     private VoucherOrder createVoucherOrder(long voucherId) {
         VoucherOrder voucherOrder = new VoucherOrder();
         voucherOrder.setId(IdUtil.getSnowflakeNextId());

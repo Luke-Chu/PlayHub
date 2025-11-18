@@ -18,4 +18,7 @@ public interface VoucherMapper {
 
     @Update("update voucher set stock = stock - 1 where id = #{voucherId} and stock = #{stock} ")
     int decreaseStockAsVersion(long voucherId, int stock);
+
+    @Update("update voucher set stock = stock - 1 where id = #{voucherId} and stock > 0 ")
+    int decreaseStockGreaterZero(long voucherId);
 }
