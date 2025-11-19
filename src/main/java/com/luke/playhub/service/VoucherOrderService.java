@@ -21,4 +21,6 @@ public interface VoucherOrderService {
     Result<Long> createOrderOnePersonOneOrderWithFinalMethod(long voucherId);
 
     Result<Long> createVoucherOrderFinalMethod(long voucherId);
+
+    Result<Long> createOrderDistributedLockWithRedis(long voucherId);
 }

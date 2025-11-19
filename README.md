@@ -176,6 +176,41 @@ synchronized (userId.toString().intern()) {
 
 > 问题：集群环境下 synchronized 锁失效。
 
+## 一人一单 - SETNX 分布式锁
+
+获取userId的对象锁实际上是获取对象监视器锁，在一个JVM中只有一个userId的对象监视器锁，多个JVM就有多个，集群环境下有多个Tomcat，也即有多个JVM，synchronized 只锁所在JVM里的对象，管不了其他JVM内容，所以集群下 synchronized 无法保证一人一单。
+
+解决方案：使用Redis的分布式锁（主要命令：SETNX命令），业务代码改造如下：
+
+```java
+Long userId = UserContext.getUserId();
+SimpleRedisLock simpleRedisLock = new SimpleRedisLock("voucher:" + voucherId + userId, redisTemplate);
+boolean isLock = simpleRedisLock.tryLock(1200);
+// 加锁失败
+if (!isLock) {
+    return Result.error("请勿重复下单");
+}
+try {
+    VoucherOrderService proxy = (VoucherOrderService) AopContext.currentProxy();
+    return proxy.createVoucherOrderFinalMethod(voucherId);
+} finally {
+    // 释放锁
+    simpleRedisLock.unlock();
+}
+```
+
+这里Redis的key是“lock:voucher:2:1”这种形式，value是线程ID。
+
+Apifox测试接口：
+
+```
+POST /voucher-order/seckill/distributedLockWithRedis/{voucherId}
+```
+
+> 问题：存在锁误删问题。每个请求删除锁时应该只删除自己加的锁（注意请求，哪怕是同一个用户）。
+
+
+
 # 问题排查
 
 ## 🚨 Spring Boot 返回 406

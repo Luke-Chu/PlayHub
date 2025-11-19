@@ -8,8 +8,10 @@ import com.luke.playhub.entity.VoucherOrder;
 import com.luke.playhub.mapper.VoucherMapper;
 import com.luke.playhub.mapper.VoucherOrderMapper;
 import com.luke.playhub.service.VoucherOrderService;
+import com.luke.playhub.utils.SimpleRedisLock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.aop.framework.AopContext;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +26,7 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
 
     private final VoucherMapper voucherMapper;
     private final VoucherOrderMapper voucherOrderMapper;
+    private final StringRedisTemplate redisTemplate;;
 
     /**
      * 创建订单，不解决超卖问题
@@ -184,12 +187,44 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
         }
     }
 
+    /**
+     * 分布式锁来替代 synchronized 判断是否重复下单
+     */
+    @Override
+    public Result<Long> createOrderDistributedLockWithRedis(long voucherId) {
+        // 1. 查询优惠券信息
+        Voucher voucher = voucherMapper.selectById(voucherId);
+        if (voucher == null) {
+            return Result.error("优惠券不存在");
+        }
+
+        // 2. 判断库存是否充足
+        if (voucher.getStock() < 1) {
+            return Result.error("库存不足");
+        }
+
+        Long userId = UserContext.getUserId();
+        SimpleRedisLock simpleRedisLock = new SimpleRedisLock("voucher:" + voucherId + userId, redisTemplate);
+        boolean isLock = simpleRedisLock.tryLock(1200);
+        // 加锁失败
+        if (!isLock) {
+            return Result.error("请勿重复下单");
+        }
+        try {
+            VoucherOrderService proxy = (VoucherOrderService) AopContext.currentProxy();
+            return proxy.createVoucherOrderFinalMethod(voucherId);
+        } finally {
+            // 释放锁
+            simpleRedisLock.unlock();
+        }
+    }
+
     @Transactional
     public Result<Long> createVoucherOrderFinalMethod(long voucherId) {
         // 3. 查询订单表，看看有没有数据
         VoucherOrder existingOrder = voucherOrderMapper.findByUserIdAndVoucherId(UserContext.getUserId(), voucherId);
         if (existingOrder != null) {
-            return Result.error("每人限领一张");
+            return Result.error("请勿重复下单");
         }
 
         // 4. 扣减库存
@@ -209,7 +244,7 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
             // 3. 查询订单表，看看有没有数据
             VoucherOrder existingOrder = voucherOrderMapper.findByUserIdAndVoucherId(UserContext.getUserId(), voucherId);
             if (existingOrder != null) {
-                return Result.error("每人限领一张");
+                return Result.error("请勿重复下单");
             }
 
             // 4. 扣减库存

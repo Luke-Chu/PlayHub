@@ -48,4 +48,9 @@ public class VoucherOrderController {
     public Result<Long> seckillOnePersonOneOrderFinalMethod(@PathVariable long voucherId) {
         return voucherOrderService.createOrderOnePersonOneOrderWithFinalMethod(voucherId);
     }
+
+    @PostMapping("/seckill/distributedLockWithRedis/{voucherId}")
+    public Result<Long> seckillDistributedLockWithRedis(@PathVariable long voucherId) {
+        return voucherOrderService.createOrderDistributedLockWithRedis(voucherId);
+    }
 }
