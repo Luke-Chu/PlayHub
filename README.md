@@ -60,7 +60,7 @@ update voucher set stock = stock - 1 where id = ? and stock > 0;
 
 预期结果：不超卖，也不少卖。
 
-## 一人一单初版
+## 一人一单 - 初版
 
 Apifox自动化测试请求示例：
 
@@ -209,7 +209,87 @@ POST /voucher-order/seckill/distributedLockWithRedis/{voucherId}
 
 > 问题：存在锁误删问题。每个请求删除锁时应该只删除自己加的锁（注意请求，哪怕是同一个用户）。
 
+## 一人一单 - Lua 脚本解决误删
 
+先分析下误删问题：现在有两个请求（线程），都是同一个用户抢购同一个优惠券。
+
+- 当请求1持有锁后内部出现了阻塞，导致锁自动释放；
+- 这时请求2来尝试获得锁，就拿到了这把锁（因为是同一个用户抢购同一个优惠券，key是一样的）；
+- 然后请求2在持有锁的过程中：线程1恢复，继续执行，当请求1走到删除逻辑时，就会把线程2加的锁进行删除。
+
+误删在这个项目中会出现什么问题呢？
+
+在上面的分析过程中，结合业务实际来看，线程拿到锁后会“从数据库查有没有订单，如果没有在创建订单，否则返回错误”。因为开启了事务，线程1和线程2会在同一个事务中代码中执行，可能线程1和线程2都查询到数据库没有订单数据，然后执行创建订单逻辑，导致一人多单。（其实这不是误删导致的问题，这是锁未续期导致的问题）。
+
+- 如果第1个请求成功创建了订单，然后删了第2个请求的锁，2个线程会进入临界区，可能导致一人多单，但这不是误删导致的，是锁未续期导致。
+- 如果第1个请求没能成功创建订单，然后删了第2个请求的锁，此时又来了第3个请求，第2个请求和第3个请求同时进入临界区代码，可能会导致一人多单，这是误删导致的（请求1误删了请求2，导致请求3进来了）。
+
+误删问题产生的根源：锁释放时，没有判断是不是自己的锁。
+
+解决办法：这些请求要获取的锁的key相同，但value可以设置为跟自己线程相关的唯一值。
+
+```java
+private static final String ID_PREFIX = UUID.randomUUID() + "-"; // 当请求来到时初始化后就唯一确定了
+
+public boolean tryLock(long timeoutSec) {
+    String threadId = String.valueOf(Thread.currentThread().threadId());
+    Boolean success = redisTemplate.opsForValue()
+            .setIfAbsent(KEY_PREFIX + name, ID_PREFIX + threadId, timeoutSec, java.util.concurrent.TimeUnit.SECONDS);
+    return Boolean.TRUE.equals(success);
+}
+
+public void unlock() {
+    String threadId = ID_PREFIX + Thread.currentThread().threadId();
+    String id = redisTemplate.opsForValue().get(KEY_PREFIX + name);
+    if (threadId.equals(id)) {
+        redisTemplate.delete(KEY_PREFIX + name);
+    }
+}
+```
+
+> 问题：删除锁不是原子操作，仍存在误删可能。
+
+误删可能分析：
+
+- 当请求1要删除锁时，已经判断完是自己的锁了，即`threadId.equals(id) == true`，但此时请求1的锁超时释放了；
+- 请求1的锁超时释放后，恰巧请求2进来了，它获取了这把锁。然后请求1执行删除逻辑，就误删了请求2的锁。
+
+如果是原子命令：请求1判断是自己的锁则一定会删除自己的锁，不存在“判断完是，结果锁超时释放了“的情况，即锁要么在判断前超时释放，要么等着判断完后被删除。
+
+解决办法：使用Lua脚本。
+
+```java
+// 加载脚本
+private static final DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>();
+static {
+    redisScript.setLocation(new ClassPathResource("unlock.lua"));
+    redisScript.setResultType(Long.class);
+}
+
+public void unlock() {
+    // 调用lua脚本进行解锁
+    redisTemplate.execute(
+            redisScript,
+            java.util.Collections.singletonList(KEY_PREFIX + name),
+            ID_PREFIX + Thread.currentThread().threadId()
+    );
+}
+```
+
+其中Lua脚本如下：
+
+```lua
+-- 这里的 KEYS[1] 就是锁的key，这里的ARGV[1] 就是当前线程标示
+-- 获取锁中的标示，判断是否与当前线程标示一致
+if (redis.call('GET', KEYS[1]) == ARGV[1]) then
+  -- 一致，则删除锁
+  return redis.call('DEL', KEYS[1])
+end
+-- 不一致，则直接返回
+return 0
+```
+
+> 问题：该业务中现在还存在一个问题 --> 锁无法续期。
 
 # 问题排查
 
