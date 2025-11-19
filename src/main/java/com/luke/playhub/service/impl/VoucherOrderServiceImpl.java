@@ -10,6 +10,8 @@ import com.luke.playhub.mapper.VoucherOrderMapper;
 import com.luke.playhub.service.VoucherOrderService;
 import com.luke.playhub.utils.SimpleRedisLock;
 import lombok.RequiredArgsConstructor;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -26,7 +28,8 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
 
     private final VoucherMapper voucherMapper;
     private final VoucherOrderMapper voucherOrderMapper;
-    private final StringRedisTemplate redisTemplate;;
+    private final StringRedisTemplate redisTemplate;
+    private final RedissonClient redissonClient;
 
     /**
      * 创建订单，不解决超卖问题
@@ -216,6 +219,36 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
         } finally {
             // 释放锁
             simpleRedisLock.unlock();
+        }
+    }
+
+    @Override
+    public Result<Long> createOrderDistributedLockWithRedisson(long voucherId) {
+        // 1. 查询优惠券信息
+        Voucher voucher = voucherMapper.selectById(voucherId);
+        if (voucher == null) {
+            return Result.error("优惠券不存在");
+        }
+
+        // 2. 判断库存是否充足
+        if (voucher.getStock() < 1) {
+            return Result.error("库存不足");
+        }
+
+        Long userId = UserContext.getUserId();
+        // Redisson 获取分布式锁
+        RLock lock = redissonClient.getLock("voucher:" + voucherId + userId);
+        boolean isLock = lock.tryLock(); // 获取锁等待时间、锁超时释放时间、时间单位
+        // 加锁失败
+        if (!isLock) {
+            return Result.error("请勿重复下单");
+        }
+        try {
+            VoucherOrderService proxy = (VoucherOrderService) AopContext.currentProxy();
+            return proxy.createVoucherOrderFinalMethod(voucherId);
+        } finally {
+            // 释放锁
+            lock.unlock();
         }
     }
 

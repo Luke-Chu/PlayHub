@@ -2,9 +2,7 @@
 
 单独做一些关键技术难点，以及测试。
 
-
-
-## 不解决超卖问题
+## 超卖问题 - 不解决
 
 Apifox自动化测试请求示例：
 
@@ -22,7 +20,7 @@ Data truncation: BIGINT UNSIGNED value is out of range
 
 如果字段 `stock` 不是 `UNSIGNED`，库存就会变为负数，多次测试200个线程会超卖9个。
 
-## 版本号解决超卖
+## 超卖问题 - 版本号解决
 
 Apifox自动化测试请求示例：
 
@@ -40,7 +38,7 @@ update voucher set stock = stock - 1 where id = ? and stock == ?;
 
 问题现象：100的库存，只扣减了13个，所以87个用户扣减失败。
 
-## 库存大于零解决超卖
+## 超卖问题 - 库存大于零解决
 
 Apifox自动化测试请求示例：
 
@@ -289,7 +287,102 @@ end
 return 0
 ```
 
+现在已经是一个生产级可用的锁了，但也确实还存在一些极端情况的问题。
+
 > 问题：该业务中现在还存在一个问题 --> 锁无法续期。
+
+## 一人一单 - Redisson 分布式锁
+
+基于SETNX命令实现的分布式锁，还存在以下问题：不可重入、不可重试、无法续期、主从导致锁失效等。
+
+Redisson是一个在Redis的基础上实现的Java驻内存数据网格（In-Memory Data Grid）。它不仅提供了一系列的分布式的Java常用对象，还提供了许多分布式服务，其中就包含了各种分布式锁的实现。比如：可重入锁、公平锁、联锁（MultiLock）、红锁、读写锁、信号量、闭锁等。
+
+将原有代码改造如下：
+
+先添加Redisson的依赖：
+
+```xml
+<dependency>
+    <groupId>org.redisson</groupId>
+    <artifactId>redisson</artifactId>
+    <version>3.45.0</version>
+</dependency>
+```
+
+然后配置RedissonClient：
+
+```java
+@Configuration
+public class RedissonConfig {
+    @Bean
+    public RedissonClient redissonClient() {
+        // 创建Redisson配置
+        Config config = new Config();
+        // 配置单节点模式的Redis服务器地址
+        config.useSingleServer().setAddress("redis://127.0.0.1:6378");
+        // 创建Redisson客户端实例
+        return Redisson.create(config);
+    }
+}
+```
+
+最后把业务代码修改下就可以了：
+
+```java
+Long userId = UserContext.getUserId();
+// Redisson 获取分布式锁
+RLock lock = redissonClient.getLock("voucher:" + voucherId + userId);
+boolean isLock = lock.tryLock(); // 获取锁等待时间、锁超时释放时间、时间单位
+// 加锁失败
+if (!isLock) {
+    return Result.error("请勿重复下单");
+}
+try {
+    VoucherOrderService proxy = (VoucherOrderService) AopContext.currentProxy();
+    return proxy.createVoucherOrderFinalMethod(voucherId);
+} finally {
+    // 释放锁
+    lock.unlock();
+}
+```
+
+Redisson有以下锁：
+
+| 锁类型                   | 获取方法                                   | 是否可重入 | 是否支持自动续期（无参 lock () 时） | 核心特性与适用场景                                           |
+| ------------------------ | ------------------------------------------ | ---------- | ----------------------------------- | ------------------------------------------------------------ |
+| 可重入锁（非公平）       | `getLock(String key)`                      | 是         | 是（默认 30 秒过期，每 10 秒续期）  | 最常用的分布式锁，支持重入和自动续期，适合绝大多数分布式互斥场景。 |
+| 公平锁                   | `getFairLock(String key)`                  | 是         | 是（同可重入锁机制）                | 按请求顺序获取锁，避免线程饥饿，适合对公平性要求高的场景（性能略低于非公平锁）。 |
+| 读写锁（读锁）           | `getReadWriteLock(String key).readLock()`  | 是         | 是（随写锁续期逻辑生效）            | 共享锁，多个线程可同时获取，适合读多写少场景（与写锁互斥）。 |
+| 读写锁（写锁）           | `getReadWriteLock(String key).writeLock()` | 是         | 是（同可重入锁机制）                | 排他锁，仅允许一个线程获取，适合写操作场景（与读锁、其他写锁互斥）。 |
+| 红锁（`RedLock`）        | `getRedLock(RLock... locks)`               | 是         | 否（必须指定过期时间）              | 基于多个独立 Redis 节点的高可用锁，容忍部分节点故障，适合对一致性要求极高的场景。 |
+| 联锁（`MultiLock`）      | `getMultiLock(RLock... locks)`             | 是         | 否（必须指定过期时间）              | 组合多个锁，需全部获取成功才算锁定，适合需要同时锁定多个资源的场景。 |
+| 信号量（Semaphore）      | `getSemaphore(String key)`                 | 否         | 否（许可有过期时间，不可续期）      | 基于许可的并发控制，限制同时访问资源的线程数，适合限流场景（如控制并发请求数）。 |
+| 可过期信号量             | `getPermitExpirableSemaphore(String key)`  | 否         | 否（许可过期后自动释放）            | 信号量的增强版，每个许可可设置过期时间，适合临时资源分配场景。 |
+| 闭锁（`CountDownLatch`） | `getCountDownLatch(String key)`            | 否         | 无续期概念（触发后永久失效）        | 协调多线程同步，等待所有子线程完成后再执行，适合批量任务等待场景（如初始化操作）。 |
+
+以上除了后面三个，其他都是可重试的锁（主要在于`lock()` 方法和`tryLock()` 方法。，前者一般无限重试，后者超时重试）。
+
+`Redisson`可重入锁机制原理（简单版）：
+
+- **锁的存储结构**：`Redisson` 的可重入锁使用 `Redis` 的哈希（`Hash`）数据结构来存储锁信息。其中，键（`Key`）表示锁的名称，字段（`Field`）为线程的唯一标识，值（`Value`）为该线程获取锁的次数。
+- **获取锁过程**：当一个线程尝试获取锁时，`Redisson` 会先检查 `Redis` 中是否存在该锁的键。如果不存在，则将该线程的唯一标识作为字段，值设为 1 存入哈希中，表示该线程成功获取锁。如果锁已经存在，会检查字段是否为当前线程的标识，如果是，则将`值加 1`，表示该线程再次获取了锁，实现了可重入。
+- **释放锁过程**：当线程释放锁时，会将对应字段的`值减 1`。如果减 1 后的值为 0，则表示该线程已经完全释放了锁，此时会删除 `Redis` 中的该锁键。
+
+`Redisson`自动续期机制原理（`WatchDog` 机制）（简单版）：
+
+- **默认过期时间**：当一个线程获取锁时，如果没有指定锁的过期时间，`Redisson` 会默认给锁设置一个 30 秒的过期时间（可以通过配置修改）。
+- **定时任务**：当抢锁完毕后，`Redisson` 会启动一个后台定时任务（`看门狗线程 TimerTask`），该任务会隔一定时间（默认是过期时间的 1/3，即 10 秒）后去检查锁是否还存在，如果存在则会自动延长锁的过期时间，重新设置为 30 秒。并且如果操作成功，那么此时就会递归调用自己，再重新设置一个`TimerTask`，让其10秒后再检查，进而完成锁的续约。
+- **任务终止条件**：当线程释放锁时，会停止 `WatchDog` 定时任务，不再进行续期操作。
+
+> 所以现在 不可重入、不可重试、不可续期都解决了，那么主从导致锁失效呢？
+
+在主从模式下，主库用于写操作，所以请求1获取主库的锁，但这时主库宕机了，选了一个从节点晋升为主库，新的主库里没有请求1的锁，请求2再来，也就能获取到锁了。所以在主从模式下，锁可能会失效。
+
+解决办法：将每个节点都看成一样的，获取锁时必须获取到所有节点的锁，也即`Redisson`提出的联锁（`MultiLock`）。只有所有的服务器都写入成功，才算是加锁成功，假设现在某个节点挂了，那么获得锁时，只要有一个节点拿不到，就不能加锁成功，这保证了加锁的可靠性。
+
+原理总结：当调用 `multiLock.lock()` 或 `multiLock.tryLock(...)` 时，内部执行以下步骤：
+
+遍历子锁列表，依次调用每个子锁的 `tryLock` 方法（带短暂超时，默认 100 ms），尝试获取锁。若所有子锁都获取成功，则联锁获取成功，进入业务逻辑。若有任何一个子锁获取失败，则立即释放已获取的所有子锁（避免部分锁定导致死锁），然后重新进入循环重试（无参 `lock()` 会无限重试，`tryLock` 会在超时前重试）。重试时会优化顺序：优先尝试获取上一次失败的子锁，减少无效遍历（Redisson 内部通过记录失败位置实现）。
 
 # 问题排查
 

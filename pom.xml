@@ -72,6 +72,11 @@
             <artifactId>spring-boot-starter-aop</artifactId>
             <!-- 无需指定版本，Spring Boot 父工程已统一管理 -->
         </dependency>
+        <dependency>
+            <groupId>org.redisson</groupId>
+            <artifactId>redisson</artifactId>
+            <version>3.45.0</version>
+        </dependency>
     </dependencies>
 
     <build>

@@ -53,4 +53,9 @@ public class VoucherOrderController {
     public Result<Long> seckillDistributedLockWithRedis(@PathVariable long voucherId) {
         return voucherOrderService.createOrderDistributedLockWithRedis(voucherId);
     }
+
+    @PostMapping("/seckill/distributedLockWithRedisson/{voucherId}")
+    public Result<Long> seckillDistributedLockWithRedisson(@PathVariable long voucherId) {
+        return voucherOrderService.createOrderDistributedLockWithRedisson(voucherId);
+    }
 }
