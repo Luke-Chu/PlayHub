@@ -191,7 +191,7 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
     }
 
     /**
-     * 分布式锁来替代 synchronized 判断是否重复下单
+     * 分布式锁Redis的SETNX命令来替代 synchronized 判断是否重复下单
      */
     @Override
     public Result<Long> createOrderDistributedLockWithRedis(long voucherId) {
@@ -222,6 +222,9 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
         }
     }
 
+    /**
+     * Redisson实现分布式锁：可重入、可重试、可续期
+     */
     @Override
     public Result<Long> createOrderDistributedLockWithRedisson(long voucherId) {
         // 1. 查询优惠券信息
