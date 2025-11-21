@@ -36,10 +36,10 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
     private final RedissonClient redissonClient;
     private final RabbitTemplate rabbitTemplate;
 
-    private static final DefaultRedisScript<Integer> seckillScript = new DefaultRedisScript<>();
+    private static final DefaultRedisScript<Long> seckillScript = new DefaultRedisScript<>();
     static {
         seckillScript.setLocation(new org.springframework.core.io.ClassPathResource("seckill.lua"));
-        seckillScript.setResultType(Integer.class);
+        seckillScript.setResultType(Long.class);
     }
 
     /**
@@ -272,7 +272,7 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
     @Override
     public Result<Long> createOrderOptimization(long voucherId) {
         // 1. 执行 Lua 判断资格
-        int result = redisTemplate.execute(seckillScript,
+        long result = redisTemplate.execute(seckillScript,
                 Collections.emptyList(),
                 String.valueOf(voucherId), UserContext.getUserId().toString());
         if (result != 0) {
