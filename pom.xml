@@ -77,6 +77,11 @@
             <artifactId>redisson</artifactId>
             <version>3.45.0</version>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.amqp</groupId>
+            <artifactId>spring-rabbit</artifactId>
+            <version>4.0.0</version>
+        </dependency>
     </dependencies>
 
     <build>

@@ -12,6 +12,7 @@ import com.luke.playhub.utils.SimpleRedisLock;
 import lombok.RequiredArgsConstructor;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -33,6 +34,7 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
     private final VoucherOrderMapper voucherOrderMapper;
     private final StringRedisTemplate redisTemplate;
     private final RedissonClient redissonClient;
+    private final RabbitTemplate rabbitTemplate;
 
     private static final DefaultRedisScript<Integer> seckillScript = new DefaultRedisScript<>();
     static {
@@ -278,11 +280,16 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
         }
 
         // 2. Redis 判断资格成功：生成订单ID
-        long orderId = IdUtil.getSnowflakeNextId();
+        VoucherOrder voucherOrder = new VoucherOrder();
+        voucherOrder.setId(IdUtil.getSnowflakeNextId());
+        voucherOrder.setVoucherId(voucherId);
+        voucherOrder.setUserId(UserContext.getUserId());
 
         // 3. 发送MQ（异步下单）
-        // todo
-        return Result.success();
+        rabbitTemplate.convertAndSend("seckill.exchange", "seckill.order", voucherOrder);
+
+        // 4. 返回订单ID
+        return Result.success(voucherOrder.getId());
     }
 
     @Transactional
@@ -331,5 +338,16 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
         voucherOrder.setUserId(UserContext.getUserId());
         voucherOrderMapper.create(voucherOrder);
         return voucherOrder;
+    }
+
+    @Override
+    public void create(VoucherOrder voucherOrder) {
+        voucherOrderMapper.create(voucherOrder);
+    }
+
+    @Override
+    public boolean exists(Long voucherOrderId) {
+        VoucherOrder voucherOrder = voucherOrderMapper.selectById(voucherOrderId);
+        return voucherOrder != null;
     }
 }

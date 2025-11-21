@@ -1,5 +1,6 @@
 package com.luke.playhub.entity;
 
+import lombok.Builder;
 import lombok.Data;
 
 import java.time.LocalDateTime;

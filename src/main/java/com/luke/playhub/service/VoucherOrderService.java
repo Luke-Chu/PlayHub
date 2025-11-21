@@ -1,6 +1,7 @@
 package com.luke.playhub.service;
 
 import com.luke.playhub.dto.Result;
+import com.luke.playhub.entity.VoucherOrder;
 
 /**
  * @author Luke
@@ -27,4 +28,8 @@ public interface VoucherOrderService {
     Result<Long> createOrderDistributedLockWithRedisson(long voucherId);
 
     Result<Long> createOrderOptimization(long voucherId);
+
+    void create(VoucherOrder voucherOrder);
+
+    boolean exists(Long voucherOrderId);
 }
