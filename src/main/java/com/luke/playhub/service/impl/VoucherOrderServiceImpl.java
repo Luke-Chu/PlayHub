@@ -274,7 +274,7 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
         // 1. 执行 Lua 判断资格
         int result = redisTemplate.execute(seckillScript,
                 Collections.emptyList(),
-                voucherId, UserContext.getUserId().toString());
+                String.valueOf(voucherId), UserContext.getUserId().toString());
         if (result != 0) {
             return Result.error(result == 1 ? "库存不足" : "请勿重复下单");
         }
