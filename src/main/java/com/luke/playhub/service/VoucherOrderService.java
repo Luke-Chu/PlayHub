@@ -25,4 +25,6 @@ public interface VoucherOrderService {
     Result<Long> createOrderDistributedLockWithRedis(long voucherId);
 
     Result<Long> createOrderDistributedLockWithRedisson(long voucherId);
+
+    Result<Long> createOrderOptimization(long voucherId);
 }

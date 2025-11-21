@@ -58,4 +58,9 @@ public class VoucherOrderController {
     public Result<Long> seckillDistributedLockWithRedisson(@PathVariable long voucherId) {
         return voucherOrderService.createOrderDistributedLockWithRedisson(voucherId);
     }
+
+    @PostMapping("/seckill/optimization/{voucherId}")
+    public Result<Long> seckillOptimization(@PathVariable long voucherId) {
+        return voucherOrderService.createOrderOptimization(voucherId);
+    }
 }

@@ -14,8 +14,11 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Collections;
 
 /**
  * @author Luke
@@ -30,6 +33,12 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
     private final VoucherOrderMapper voucherOrderMapper;
     private final StringRedisTemplate redisTemplate;
     private final RedissonClient redissonClient;
+
+    private static final DefaultRedisScript<Integer> seckillScript = new DefaultRedisScript<>();
+    static {
+        seckillScript.setLocation(new org.springframework.core.io.ClassPathResource("seckill.lua"));
+        seckillScript.setResultType(Integer.class);
+    }
 
     /**
      * 创建订单，不解决超卖问题
@@ -253,6 +262,27 @@ public class VoucherOrderServiceImpl implements VoucherOrderService {
             // 释放锁
             lock.unlock();
         }
+    }
+
+    /**
+     * 秒杀优化方案：使用Redis + lua脚本判断是否有秒杀资格
+     */
+    @Override
+    public Result<Long> createOrderOptimization(long voucherId) {
+        // 1. 执行 Lua 判断资格
+        int result = redisTemplate.execute(seckillScript,
+                Collections.emptyList(),
+                voucherId, UserContext.getUserId().toString());
+        if (result != 0) {
+            return Result.error(result == 1 ? "库存不足" : "请勿重复下单");
+        }
+
+        // 2. Redis 判断资格成功：生成订单ID
+        long orderId = IdUtil.getSnowflakeNextId();
+
+        // 3. 发送MQ（异步下单）
+        // todo
+        return Result.success();
     }
 
     @Transactional
