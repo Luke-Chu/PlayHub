@@ -4,4 +4,9 @@
     <select id="selectById" parameterType="long" resultType="com.luke.playhub.entity.Voucher">
         SELECT id, shop_id, stock, create_time, update_time FROM voucher WHERE id = #{id}
     </select>
+    
+    <insert id="create" parameterType="com.luke.playhub.entity.Voucher" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO voucher (shop_id, stock)
+        VALUES (#{shopId}, #{stock})
+    </insert>
 </mapper>

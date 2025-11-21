@@ -22,7 +22,7 @@ public class VoucherServiceImpl implements VoucherService {
     @Transactional
     @Override
     public void save(Voucher voucher) {
-        voucherMapper.insert(voucher);
+        voucherMapper.create(voucher);
         // 保存秒杀信息到Redis
         stringRedisTemplate.opsForValue().set("stock:voucher:" + voucher.getId(), String.valueOf(voucher.getStock()));
     }

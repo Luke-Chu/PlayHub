@@ -1,7 +1,6 @@
 package com.luke.playhub.mapper;
 
 import com.luke.playhub.entity.Voucher;
-import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Update;
 
@@ -23,6 +22,5 @@ public interface VoucherMapper {
     @Update("update voucher set stock = stock - 1 where id = #{voucherId} and stock > 0 ")
     int decreaseStockGreaterZero(long voucherId);
 
-    @Insert("insert into voucher (shop_id, stock) values (#{shopId}, #{stock})")
-    void insert(Voucher voucher);
+    void create(Voucher voucher);
 }
