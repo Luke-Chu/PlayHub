@@ -26,7 +26,7 @@ public class UserInterceptor implements HandlerInterceptor {
                 // 转换为 Long 类型（根据实际类型调整，如 String 则直接存储）
                 Long userId = Long.parseLong(userIdStr);
                 UserContext.setUserId(userId); // 存入 ThreadLocal
-                log.info("UserInterceptor 设置 userId: {}", userId);
+                // log.info("UserInterceptor 设置 userId: {}", userId);
             } catch (NumberFormatException e) {
                 // 若参数格式错误，可根据业务需求处理（如返回错误、忽略等）
                 response.getWriter().write("userId 参数格式错误");
