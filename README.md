@@ -384,7 +384,246 @@ Redisson有以下锁：
 
 遍历子锁列表，依次调用每个子锁的 `tryLock` 方法（带短暂超时，默认 100 ms），尝试获取锁。若所有子锁都获取成功，则联锁获取成功，进入业务逻辑。若有任何一个子锁获取失败，则立即释放已获取的所有子锁（避免部分锁定导致死锁），然后重新进入循环重试（无参 `lock()` 会无限重试，`tryLock` 会在超时前重试）。重试时会优化顺序：优先尝试获取上一次失败的子锁，减少无效遍历（Redisson 内部通过记录失败位置实现）。
 
+## 秒杀优化 - 压测表现
+
+现在这一套秒杀流程如下：
+
+从MySQL查询优惠券信息（判断库存是否大于0） -> 获取分布式锁 -> 查询订单表（看有没有重复下单） -> 扣减库存 -> 生成订单。
+
+要查MySQL的次数太多了，会导致请求变得很慢，用JMeter进行2000个线程压测结果如下：
+
+![image-20251121170552542](https://luke-pictures-bucket.oss-cn-chengdu.aliyuncs.com/default/image-20251121170552542.png)
+
+请求平均延时1197毫秒是比较高的，有时测出来会更高。如果将下单资格的判断放在Redis里快速判断，如果没有资格则直接返回错误即可，如果有资格再通过消息队列异步写入到MySQL，必定会快很多。
+
+对于第一个判断：优惠券库存是否大于零。可在Redis设计如下数据结构：
+
+- `KEY = stock:voucher:1`、`VALUE = 100`；KEY是优惠券，VALUE是该优惠券的库存。
+
+对于第二个判断：用户是否已经下单，可以用hash结构：
+
+- `KEY = order:voucher:1`、`VALUE = 1, 2, 3, 4 ...`；KEY是优惠券的订单信息，VALUE是该优惠券已经下单的用户ID。
+
+## 秒杀优化 - Redis实现秒杀资格判断
+
+新增优惠券时直接把优惠券信息放到Redis里：
+
+```java
+@Transactional
+@Override
+public void save(Voucher voucher) {
+    voucherMapper.insert(voucher);
+    // 保存秒杀信息到Redis
+    stringRedisTemplate.opsForValue().set("stock:voucher:" + voucher.getId(), String.valueOf(voucher.getStock()));
+}
+```
+
+接下来写一个lua脚本用于秒杀资格判断：
+
+```lua
+ -- 1. 参数列表
+local voucherId = ARGV[1] -- 1.1 秒杀券ID
+local userId = ARGV[2] -- 1.2 用户ID
+
+ -- 2. 秒杀库存key
+local stockKey = 'stock:voucher:' .. voucherId
+ -- 3. 秒杀订单key
+local orderKey = 'order:voucher:' .. voucherId
+
+ -- 4. 判断库存是否充足
+if (tonumber(redis.call('get', stockKey)) <= 0) then
+    return 1 -- 库存不足
+end
+
+if (redis.call('sismember', orderKey, userId) == 1) then
+    return 2 -- 用户已购买
+end
+
+ -- 5. 扣减库存
+redis.call('incrby', stockKey, -1)
+ -- 6. 记录用户购买信息
+redis.call('sadd', orderKey, userId)
+ -- 7. 返回订单ID
+return 0 -- 秒杀成功
+```
+
+然后在service修改对应逻辑为：
+
+```java
+public Result<Long> createOrderOptimization(long voucherId) {
+    // 1. 执行 Lua 判断资格
+    int result = redisTemplate.execute(seckillScript,
+            Collections.emptyList(),
+            voucherId, UserContext.getUserId().toString());
+    if (result != 0) {
+        return Result.error(result == 1 ? "库存不足" : "请勿重复下单");
+    }
+    // 2. Redis 判断资格成功：生成订单ID
+    long orderId = IdUtil.getSnowflakeNextId();
+    // 3. 发送MQ（异步下单）
+    // todo
+    return Result.success();
+}
+```
+
+## 秒杀优化 - RabbitMQ 异步下单
+
+资格判断成功后，直接生成订单号，发送给MQ：发送消息要开启消息持久化，不过现在RabbitMQ已经默认持久化了。
+
+```java
+// 2. Redis 判断资格成功：生成订单ID
+VoucherOrder voucherOrder = new VoucherOrder();
+voucherOrder.setId(IdUtil.getSnowflakeNextId());
+voucherOrder.setVoucherId(voucherId);
+voucherOrder.setUserId(UserContext.getUserId());
+// 3. 发送MQ（异步下单）
+rabbitTemplate.convertAndSend("seckill.exchange", "seckill.order", voucherOrder);
+// 4. 返回订单ID
+return Result.success(voucherOrder.getId());
+```
+
+消费者从队列取出消息，然后执行真正的数据库写入。
+
+```java
+@RabbitListener(queues = "seckill.order.queue")
+public void listenSeckillOrderQueue(VoucherOrder voucherOrder) {
+    try {
+        // 1. 再次检查订单是否已存在（幂等，避免重复消费）
+        if (voucherOrderService.exists(voucherOrder.getId())) {
+            return;
+        }
+        // 2. MySQL 扣减库存
+        int changed = voucherMapper.decreaseStockGreaterZero(voucherOrder.getVoucherId());
+        if (changed == 0) {
+            // 补偿逻辑：Redis库存回滚
+            stringRedisTemplate.opsForValue().increment("stock:voucher:" + voucherOrder.getVoucherId(), 1);
+            stringRedisTemplate.opsForSet().remove("order:voucher:" + voucherOrder.getVoucherId(), voucherOrder.getUserId());
+            return;
+        }
+        // 3. 创建订单
+        voucherOrderService.create(voucherOrder);
+    } catch (Exception e) {
+        // MQ失败重试，或手动补偿
+        throw new RuntimeException(e);
+    }
+}
+```
+
+在同一时间、同一环境对优化前的接口和优化后的接口进行压测：2000个线程，1000个用户，100库存。
+
+```plaintext
+POST /voucher-order/seckill/distributedLockWithRedisson/1
+POST /voucher-order/seckill/optimization/4
+```
+
+优化前：
+
+![image-20251122130323158](https://luke-pictures-bucket.oss-cn-chengdu.aliyuncs.com/default/image-20251122130323158.png)
+
+优化后：
+
+![image-20251122130410629](https://luke-pictures-bucket.oss-cn-chengdu.aliyuncs.com/default/image-20251122130410629.png)
+
+可以看到平均响应时间降低约 85%，吞吐量提升约 94.1%，优化后中位数（96 ms）、90%/95%/99% 分位数（178/179/181 ms）均远低于优化前（929/1023/1040/1084 ms），说明接口稳定性大幅提升。
+
+这时还可以看到通过Redis优化后，已经在Redis层面解决了超卖问题和一人一单问题，MySQL层面只是做了一个兜底操作。为什么Redis判断秒杀资格一定是正确的呢？
+
+> Redis 核心命令都是单线程模型，所以不会有并发问题。
+
+## 秒杀优化 - Q&A
+
+消费者代码是否有并发问题？
+
+1. 是否会导致超卖？
+
+   只要 SQL 长这样：
+
+   ```sql
+   UPDATE voucher SET stock = stock - 1 WHERE voucher_id = #{voucherId} AND stock > 0
+   ```
+   那么这是原子的：多个消费者同时执行 SQL、只有一个会成功（changed = 1）、其余线程 changed = 0 → 已经做了补偿。
+
+   因此不会超卖，不会并发问题。
+
+2. 是否需要加分布式锁？
+
+   不需要。理由：
+
+     - Redis 已预扣库存（Lua 原子）
+
+     - 数据库扣库存 SQL 自带竞争控制（stock > 0）
+
+     - MQ 单条消息不会被多个消费者同时消费
+
+   所以这段消费逻辑 **天然线程安全**。
+
+
+3. 现在的三步逻辑是否安全？
+
+
+   1. 幂等校验（exists）
+
+      这是必须的：
+
+      ```java
+      if (voucherOrderService.exists(voucherOrder.getId())) {
+          return;
+      }
+      ```
+
+      MQ 消息可能：重投递、超时重试、消费失败导致重复投递。
+
+      幂等保证了你不会重复创建订单。
+
+   2. 数据库扣库存（并发安全的关键）
+
+      已经这样写：
+
+      ```java
+      int changed = voucherMapper.decreaseStockGreaterZero(voucherOrder.getVoucherId());
+      if (changed == 0) {
+          // 补偿逻辑
+      }
+      ```
+
+      只要 decreaseStockGreaterZero 是：
+
+      ```sql
+      UPDATE voucher SET stock = stock - 1 WHERE voucher_id = #{voucherId} AND stock > 0
+      ```
+
+      那它就是：原子性、多线程安全、避免超卖、天然排他。因此完全不需要加锁。
+
+   3. 创建订单
+
+      只要数据库订单表 `id = orderId` 是主键：
+
+      ```java
+      voucherOrderService.create(voucherOrder);
+      ```
+
+      即使 MQ 重复投递，也不会重复创建订单 —— 因为主键冲突。幂等保证了强一致。
+
+4. 是否可能出现“资格判断成功但最终没创建订单”？
+
+   可能！（**所有分布式系统都会遇到**）
+
+   但目前的架构已经解决到：
+
+   - MQ 不会丢消息
+   - 消费异常会自动重试
+   - 幂等检查避免重复
+   - SQL 保证库存不会为负
+   - Redis 补偿避免库存卡死
+
+   最终会达到：
+
+   > **最终一致性**
+   > 用户得到资格 → 最后一定创建订单（除非 MQ、DB 都彻底挂，几乎不可能）
+
 # 问题排查
+
+记录遇到的一些问题。
 
 ## 🚨 Spring Boot 返回 406
 
@@ -408,3 +647,60 @@ public class Result<T> {
 ```
 
 > 返回对象不能序列化 → JSON 生成失败 → 406。给类加 getters 即可解决。
+
+## 🚨 RabbitMQ 相关依赖报错
+
+这个依赖已经包含了`spring-rabbit`依赖：
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-amqp</artifactId>
+</dependency>
+```
+
+如果自己单独引入依赖会把相关依赖给挤掉，然后会报错缺少依赖“spring-retry”等依赖。
+
+```xml
+<dependency>
+    <groupId>org.springframework.amqp</groupId>
+    <artifactId>spring-rabbit</artifactId>
+    <version>4.0.0</version>
+</dependency>
+```
+
+## 🚨 Lua 返回的 Long 型
+
+Lua 默认返回 Long 型，接收的参数也只能是 String 类型，如果是其他类型会报错，这个错误排查时间比较久。我在加载秒杀的lua脚本时，设置的泛型是 Integer，这是非常错误的做法！
+
+```java
+private static final DefaultRedisScript<Integer> seckillScript = new DefaultRedisScript<>();
+static {
+    seckillScript.setLocation(new org.springframework.core.io.ClassPathResource("seckill.lua"));
+    seckillScript.setResultType(Integer.class);
+}
+```
+
+## 🚨 Mybatis 使用自增主键
+
+Mybatis 使用自增主键需要做一些配置，不会直接生效的。
+
+```xml
+<insert id="create" parameterType="com.luke.playhub.entity.Voucher" useGeneratedKeys="true" keyProperty="id">
+    INSERT INTO voucher (shop_id, stock)
+    VALUES (#{shopId}, #{stock})
+</insert>
+```
+
+如果使用注解：
+
+```java
+    @Insert("INSERT INTO Voucher (shop_id, stock) VALUES (#{shopId}, #{stock})")
+    @Options(
+        useGeneratedKeys = true,  // 启用获取自增键
+        keyProperty = "id",       // 实体类字段名
+        keyColumn = "id"          // 数据库表字段名（可选）
+    )
+    int create(Voucher voucher);  // 返回值仍是「影响行数」，ID 回写到 Voucher 对象中
+```
+
